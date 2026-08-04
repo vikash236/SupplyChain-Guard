@@ -1,0 +1,10 @@
+{
+    "name": "benign-npm-package",
+    "version": "1.0.0",
+    "description": "Standard safe npm package",
+    "scripts": {
+        "build": "tsc",
+        "test": "jest",
+        "lint": "eslint ."
+    }
+}
