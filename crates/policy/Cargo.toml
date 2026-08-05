@@ -1,0 +1,13 @@
+[package]
+name = "policy"
+version = "0.1.0"
+edition = "2021"
+description = "Declarative security policy engine and configuration parser for SupplyChain-Guard"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+
+[dev-dependencies]
+tempfile = "3"
+

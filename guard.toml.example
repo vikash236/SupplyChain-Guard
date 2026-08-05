@@ -1,0 +1,47 @@
+# SupplyChain-Guard Security Policy Configuration
+
+[scanner]
+# List of finding kinds to ignore entirely during static scan
+ignored_rules = [
+  # "Command Execution",
+  # "Lifecycle Hook"
+]
+
+# List of file paths to exclude from static scanning
+ignored_paths = [
+  # "vendor/legacy-crate/build.rs"
+]
+
+# Override severity levels for specific findings
+[scanner.severity_overrides]
+# "Command Execution" = "INFO"
+# "Sensitive File Read" = "CRITICAL"
+
+[sandbox]
+# Allow or deny outbound network connections in process sandbox
+allow_network = false
+
+# Custom environment variables explicitly permitted inside sandbox container
+env_allowlist = [
+  "CARGO_BUILD_TARGET",
+  "RUSTFLAGS"
+]
+
+# Environment variables explicitly stripped from sandbox container
+env_denylist = [
+  "INTERNAL_TOKEN",
+  "STAGE_SECRET"
+]
+
+# Maximum process memory limit in megabytes (e.g. 1024 MB = 1 GB)
+memory_limit_mb = 1024
+
+# Allowed build target directories for write operations
+allowed_write_paths = [
+  "./target"
+]
+
+[rules]
+block_obfuscated_code = true
+block_subprocesses = false
+block_network_calls = true

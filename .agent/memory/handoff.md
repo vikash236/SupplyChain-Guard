@@ -9,7 +9,25 @@
   - Created `src/main.rs` CLI entry point with `clap` implementing `scan` (with text & JSON formats) and `exec` subcommands.
   - Created test fixtures and complete unit + integration test suite (26 passing tests).
 
-## Next Phase: Phase 1 — Process Isolation Enforcer
-- Implement OS-native process sandboxing in `crates/sandbox/src/win.rs` (Windows Job Objects via `windows-sys` + AppContainer capability profiles) and `crates/sandbox/src/linux.rs` (Linux `unshare` namespaces + `seccomp-bpf`).
-- Connect `supplychain-guard exec` subcommand to active process sandbox enforcer.
-- Implement target directory write isolation (`./target/` or `./node_modules/`).
+- **Phase 1 (Process Isolation Enforcer): COMPLETE.**
+  - Implemented Windows Job Objects process isolation in `crates/sandbox/src/win.rs` using `windows-sys` (`CreateJobObjectW`, `SetInformationJobObject` with `JOBOBJECT_EXTENDED_LIMIT_INFORMATION` and `JOBOBJECT_BASIC_UI_RESTRICTIONS`).
+  - Implemented Linux namespace process isolation in `crates/sandbox/src/linux.rs` using `nix` (`unshare` for `CLONE_NEWNS`, `CLONE_NEWNET`, `CLONE_NEWPID`).
+  - Implemented credential environment variable stripping engine (`sanitize_env`) in `crates/sandbox/src/lib.rs` stripping `AWS_*`, `GITHUB_*`, `SLACK_*`, `DATABASE_*`, `ID_RSA`, and sensitive suffixes/exact names.
+  - Implemented shell command parser (`parse_command_str`) for tokenizing multi-word execution strings.
+  - Integrated `supplychain-guard exec` CLI command to launch sandboxed subprocesses with network deny-by-default and environment sanitization.
+  - Created sandbox unit/integration test suite (`crates/sandbox/tests/sandbox_tests.rs`) with 30 passing workspace tests across scanner and sandbox crates.
+
+- **Phase 2 (Dynamic Behavioral Interceptor & Policy Engine): COMPLETE.**
+  - Implemented declarative policy crate `crates/policy` for `guard.toml` configuration parsing (`GuardPolicy`, `ScannerPolicy`, `SandboxPolicy`, `RulePolicy`).
+  - Integrated policy-aware finding suppressions, ignored paths, and severity overrides in `crates/scanner/src/lib.rs` (`apply_policy_to_report`).
+  - Integrated policy-driven sandbox configuration, environment denylisting, and process memory limits (`memory_limit_mb`) via Windows Job Objects `JOBOBJECT_EXTENDED_LIMIT_INFORMATION` (`ProcessMemoryLimit`).
+  - Added `--config` / `-c` CLI option to `supplychain-guard scan` and `exec` subcommands with auto-detection of `./guard.toml`.
+  - Created annotated example policy configuration (`guard.toml.example`) and unit tests (`crates/policy/tests/policy_tests.rs`) with 32 passing workspace tests.
+
+## Next Phase: Phase 3 — Continuous CI/CD Integration & Enterprise Governance
+- Implement SARIF (Static Analysis Results Interchange Format) output formatter for GitHub Security Code Scanning integration.
+- Implement GitHub Actions workflow integration (`action.yml`).
+- Implement build script hash caching / signature verification system.
+- Implement pre-commit hook installer command (`supplychain-guard init-hook`).
+
+

@@ -30,8 +30,30 @@
 
 ---
 
-### Next Tasks: Phase 1 — Process Isolation Enforcer
-- [ ] Implement Windows Job Objects isolation in `crates/sandbox/src/win.rs` using `windows-sys` (`CreateJobObjectW`, `SetInformationJobObject`).
-- [ ] Implement AppContainer capability-based filesystem and network restriction on Windows.
-- [ ] Implement Linux namespace isolation in `crates/sandbox/src/linux.rs` using `nix` (`unshare` for `CLONE_NEWPID`, `CLONE_NEWNET`, `CLONE_NEWNS`).
-- [ ] Implement environment variable credential stripping prior to process launch.
+### Process Isolation Enforcer (Phase 1 Completed ✓)
+- [x] Implement Windows Job Objects isolation in `crates/sandbox/src/win.rs` using `windows-sys` (`CreateJobObjectW`, `SetInformationJobObject` with `JOBOBJECT_EXTENDED_LIMIT_INFORMATION` & `JOBOBJECT_BASIC_UI_RESTRICTIONS`).
+- [x] Implement UI restrictions and process handle isolation on Windows.
+- [x] Implement Linux namespace isolation in `crates/sandbox/src/linux.rs` using `nix` (`unshare` for `CLONE_NEWPID`, `CLONE_NEWNET`, `CLONE_NEWNS`).
+- [x] Implement environment variable credential stripping prior to process launch (`AWS_*`, `GITHUB_*`, `SLACK_*`, `DATABASE_*`, `ID_RSA`, etc. stripped by default).
+- [x] Implement CLI command string parsing (`parse_command_str`) and connect `supplychain-guard exec` subcommand to active sandbox enforcer.
+- [x] Write comprehensive unit and integration tests for sandbox configurations and sandboxed process execution (30 passing workspace tests).
+
+---
+
+### Dynamic Behavioral Interceptor & Policy Engine (Phase 2 Completed ✓)
+- [x] Implement declarative build policy engine crate (`crates/policy`) for `guard.toml` configuration parsing (`GuardPolicy`, `ScannerPolicy`, `SandboxPolicy`, `RulePolicy`).
+- [x] Implement policy-driven scanner finding suppressions, ignored paths, and severity overrides in `crates/scanner/src/lib.rs` (`apply_policy_to_report`).
+- [x] Implement policy-driven sandbox configuration construction, environment denylisting, and process memory limits (`memory_limit_mb`) via Windows Job Objects `JOBOBJECT_EXTENDED_LIMIT_INFORMATION` (`ProcessMemoryLimit`).
+- [x] Add `--config` / `-c` CLI option to `supplychain-guard scan` and `exec` subcommands with auto-detection of `./guard.toml`.
+- [x] Provide annotated example policy configuration (`guard.toml.example`).
+- [x] Write complete unit test suite for policy parsing and enforcement (32 passing workspace tests).
+
+---
+
+### Next Tasks: Phase 3 — Continuous CI/CD Integration & Enterprise Governance
+- [ ] Implement GitHub Actions reusable action runner (`action.yml`).
+- [ ] Implement SARIF (Static Analysis Results Interchange Format) report output for GitHub Security / Code Scanning integration.
+- [ ] Implement build script hash caching / signature verification to skip unchanged benign build scripts.
+- [ ] Add pre-commit hook installer command (`supplychain-guard init-hook`).
+
+

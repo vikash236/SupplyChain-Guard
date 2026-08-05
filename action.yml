@@ -1,0 +1,39 @@
+name: 'SupplyChain-Guard Build Script Security Scanner'
+description: 'Build-time native code & hook sandbox and static AST analyzer for Rust build.rs and Node package.json scripts'
+author: 'SupplyChain-Guard Team'
+
+inputs:
+  path:
+    description: 'Path to scan directory or build script file'
+    required: false
+    default: '.'
+  config:
+    description: 'Path to guard.toml policy configuration file'
+    required: false
+    default: ''
+  sarif_file:
+    description: 'Output path for generated SARIF report'
+    required: false
+    default: 'results.sarif'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Run SupplyChain-Guard Scan
+      shell: bash
+      run: |
+        CONFIG_FLAG=""
+        if [ -n "${{ inputs.config }}" ]; then
+          CONFIG_FLAG="--config ${{ inputs.config }}"
+        fi
+
+        echo "Running SupplyChain-Guard static AST scanner..."
+        cargo run --quiet -- scan "${{ inputs.path }}" $CONFIG_FLAG --format sarif > "${{ inputs.sarif_file }}" || true
+
+    - name: Upload SARIF report to GitHub Security
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: ${{ inputs.sarif_file }}

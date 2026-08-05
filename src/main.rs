@@ -1,9 +1,10 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use colored::*;
-use scanner::{scan_project, ScanReport, Severity};
-use std::path::PathBuf;
+use policy::GuardPolicy;
+use scanner::{apply_policy_to_report, report_to_sarif, scan_project, BuildCache, ScanReport, Severity};
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::exit;
-
 
 #[derive(Parser)]
 #[command(
@@ -26,9 +27,17 @@ enum Commands {
         #[arg(default_value = ".")]
         path: PathBuf,
 
-        /// Output format (text or json)
+        /// Output format (text, json, or sarif)
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
+
+        /// Path to guard.toml policy configuration file
+        #[arg(short, long)]
+        config: Option<PathBuf>,
+
+        /// Use SHA-256 hash cache file (.guard-cache.json) to skip clean unmodified build scripts
+        #[arg(short, long, default_value_t = false)]
+        use_cache: bool,
 
         /// Exit with non-zero code if CRITICAL findings are detected
         #[arg(long, default_value_t = true)]
@@ -40,6 +49,10 @@ enum Commands {
         /// Command string to execute inside sandbox (e.g. "cargo build" or "npm install")
         command_str: String,
 
+        /// Path to guard.toml policy configuration file
+        #[arg(short, long)]
+        config: Option<PathBuf>,
+
         /// Directory allowed for target build output writes
         #[arg(short, long, default_value = "./target")]
         target_dir: PathBuf,
@@ -48,12 +61,20 @@ enum Commands {
         #[arg(long, default_value_t = false)]
         allow_network: bool,
     },
+
+    /// Install git pre-commit hook in .git/hooks/pre-commit
+    InitHook {
+        /// Overwrite existing pre-commit hook script if present
+        #[arg(short, long, default_value_t = false)]
+        force: bool,
+    },
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 enum OutputFormat {
     Text,
     Json,
+    Sarif,
 }
 
 fn main() {
@@ -63,28 +84,71 @@ fn main() {
         Commands::Scan {
             path,
             format,
+            config,
+            use_cache,
             fail_on_critical,
         } => {
-            run_scan(&path, format, fail_on_critical);
+            run_scan(&path, format, config, use_cache, fail_on_critical);
         }
         Commands::Exec {
             command_str,
+            config,
             target_dir,
             allow_network,
         } => {
-            run_exec(&command_str, target_dir, allow_network);
+            run_exec(&command_str, config, target_dir, allow_network);
+        }
+        Commands::InitHook { force } => {
+            run_init_hook(force);
         }
     }
 }
 
-fn run_scan(path: &PathBuf, format: OutputFormat, fail_on_critical: bool) {
+fn run_scan(
+    path: &PathBuf,
+    format: OutputFormat,
+    config_path: Option<PathBuf>,
+    use_cache: bool,
+    fail_on_critical: bool,
+) {
+    let policy = match GuardPolicy::load_or_default(config_path.as_deref()) {
+        Ok(p) => p,
+        Err(err) => {
+            eprintln!("Policy configuration error: {}", err);
+            exit(2);
+        }
+    };
+
+    let cache_file_path = Path::new(".guard-cache.json");
+    let mut cache = if use_cache {
+        BuildCache::load_cache(cache_file_path)
+    } else {
+        BuildCache::default()
+    };
+
     match scan_project(path) {
-        Ok(report) => {
+        Ok(mut report) => {
+            apply_policy_to_report(&mut report, &policy);
+
+            if use_cache {
+                // Record findings into cache file
+                for finding in &report.findings {
+                    if let Ok(hash) = scanner::compute_file_sha256(&finding.file) {
+                        cache.record(&finding.file, hash, report.has_critical(), report.findings.len());
+                    }
+                }
+                let _ = cache.save_cache(cache_file_path);
+            }
+
             match format {
                 OutputFormat::Json => {
                     let json_output = serde_json::to_string_pretty(&report)
                         .unwrap_or_else(|e| format!("{{\"error\": \"Failed to serialize: {}\"}}", e));
                     println!("{}", json_output);
+                }
+                OutputFormat::Sarif => {
+                    let sarif_output = report_to_sarif(&report);
+                    println!("{}", sarif_output);
                 }
                 OutputFormat::Text => {
                     print_text_report(&report, path);
@@ -118,7 +182,6 @@ fn print_text_report(report: &ScanReport, path: &PathBuf) {
             Severity::Warn => " WARN ".on_yellow().black().bold(),
             Severity::Critical => " CRITICAL ".on_red().white().bold(),
         };
-
 
         let file_loc = if let Some(line) = finding.line {
             format!("{}:{}", finding.file.display(), line)
@@ -166,19 +229,34 @@ fn print_text_report(report: &ScanReport, path: &PathBuf) {
     println!();
 }
 
-fn run_exec(command_str: &str, target_dir: PathBuf, allow_network: bool) {
-    println!("\n{}", "=== SupplyChain-Guard Sandbox Execution ===".bold());
-    println!("Command    : {}", command_str.cyan().bold());
-    println!("Target Dir : {}", target_dir.display());
-    println!("Network    : {}\n", if allow_network { "ALLOWED".yellow() } else { "DENIED (isolated)".green().bold() });
-
-    let config = sandbox::SandboxConfig {
-        target_dir,
-        allow_network,
-        ..Default::default()
+fn run_exec(command_str: &str, config_path: Option<PathBuf>, target_dir: PathBuf, allow_network: bool) {
+    let policy = match GuardPolicy::load_or_default(config_path.as_deref()) {
+        Ok(p) => p,
+        Err(err) => {
+            eprintln!("Policy configuration error: {}", err);
+            exit(2);
+        }
     };
 
-    match sandbox::execute_sandboxed(command_str, &config) {
+    let mut sandbox_config = sandbox::SandboxConfig::from_policy(&policy);
+
+    if allow_network {
+        sandbox_config.allow_network = true;
+    }
+    if target_dir != PathBuf::from("./target") {
+        sandbox_config.target_dir = target_dir;
+    }
+
+    println!("\n{}", "=== SupplyChain-Guard Sandbox Execution ===".bold());
+    println!("Command      : {}", command_str.cyan().bold());
+    println!("Target Dir   : {}", sandbox_config.target_dir.display());
+    println!("Network      : {}", if sandbox_config.allow_network { "ALLOWED".yellow() } else { "DENIED (isolated)".green().bold() });
+    if let Some(mem_mb) = sandbox_config.memory_limit_mb {
+        println!("Memory Limit : {} MB", mem_mb.to_string().cyan());
+    }
+    println!();
+
+    match sandbox::execute_sandboxed(command_str, &sandbox_config) {
         Ok(exit_code) => {
             if exit_code == 0 {
                 println!("{}", "✓ Command finished cleanly inside sandbox.".green().bold());
@@ -193,3 +271,57 @@ fn run_exec(command_str: &str, target_dir: PathBuf, allow_network: bool) {
         }
     }
 }
+
+fn run_init_hook(force: bool) {
+    let git_dir = Path::new(".git");
+    if !git_dir.exists() {
+        eprintln!("{}", "Error: .git directory not found. Must be run inside a git repository root.".red().bold());
+        exit(1);
+    }
+
+    let hooks_dir = git_dir.join("hooks");
+    if let Err(e) = fs::create_dir_all(&hooks_dir) {
+        eprintln!("Failed to create .git/hooks directory: {}", e);
+        exit(1);
+    }
+
+    let hook_file = hooks_dir.join("pre-commit");
+    if hook_file.exists() && !force {
+        eprintln!(
+            "{}",
+            "Pre-commit hook already exists at .git/hooks/pre-commit. Pass --force to overwrite.".yellow()
+        );
+        exit(1);
+    }
+
+    let hook_script = r#"#!/bin/sh
+# SupplyChain-Guard Pre-Commit Hook
+# Scans build.rs and package.json scripts before git commits
+
+echo "[SupplyChain-Guard] Scanning project build scripts prior to commit..."
+cargo run --quiet -- scan .
+
+if [ $? -ne 0 ]; then
+    echo "[SupplyChain-Guard] Pre-commit security check FAILED! Commit blocked."
+    exit 1
+fi
+"#;
+
+    if let Err(e) = fs::write(&hook_file, hook_script) {
+        eprintln!("Failed to write pre-commit hook script: {}", e);
+        exit(1);
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&hook_file).unwrap().permissions();
+        perms.set_mode(0o755);
+        let _ = fs::set_permissions(&hook_file, perms);
+    }
+
+    println!("\n{}", "✓ Pre-commit hook successfully installed at .git/hooks/pre-commit".green().bold());
+    println!("Build scripts will now be automatically scanned prior to git commits.\n");
+}
+
+
