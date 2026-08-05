@@ -53,6 +53,12 @@ pub enum FindingKind {
     EncodedPayload,
     /// Lifecycle hook present in package.json (preinstall, postinstall, etc.)
     LifecycleHook,
+    /// Dynamic FFI execution calls (dlsym, LoadLibrary, GetProcAddress, libc::dlopen)
+    FfiExecution,
+    /// Obfuscated byte array or hex byte sequence payload in build script
+    ObfuscatedByteSequence,
+    /// Raw socket or HTTP crate import in build script (socket2, reqwest, ureq, hyper)
+    RawSocketUsage,
 }
 
 impl fmt::Display for FindingKind {
@@ -67,9 +73,13 @@ impl fmt::Display for FindingKind {
             FindingKind::SuspiciousCommand => write!(f, "Suspicious Command"),
             FindingKind::EncodedPayload => write!(f, "Encoded Payload"),
             FindingKind::LifecycleHook => write!(f, "Lifecycle Hook"),
+            FindingKind::FfiExecution => write!(f, "FFI Execution"),
+            FindingKind::ObfuscatedByteSequence => write!(f, "Obfuscated Byte Sequence"),
+            FindingKind::RawSocketUsage => write!(f, "Raw Socket Usage"),
         }
     }
 }
+
 
 /// A single scanner finding — one detected suspicious pattern.
 #[derive(Debug, Clone, Serialize, Deserialize)]

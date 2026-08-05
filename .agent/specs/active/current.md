@@ -50,10 +50,13 @@
 
 ---
 
-### Next Tasks: Phase 3 — Continuous CI/CD Integration & Enterprise Governance
-- [ ] Implement GitHub Actions reusable action runner (`action.yml`).
-- [ ] Implement SARIF (Static Analysis Results Interchange Format) report output for GitHub Security / Code Scanning integration.
-- [ ] Implement build script hash caching / signature verification to skip unchanged benign build scripts.
-- [ ] Add pre-commit hook installer command (`supplychain-guard init-hook`).
+### Continuous CI/CD Integration & Enterprise Governance (Phase 3 Completed ✓)
+- [x] Implement SARIF v2.1.0 report exporter in `crates/scanner/src/sarif.rs` (`report_to_sarif`) with `--format sarif` CLI option.
+- [x] Implement GitHub Actions reusable workflow (`action.yml`) for automated static AST security scans and SARIF uploads to GitHub Security Code Scanning.
+- [x] Implement SHA-256 build script hash caching engine (`crates/scanner/src/cache.rs`) with `--use-cache` / `-u` CLI option.
+- [x] Implement pre-commit hook installer command (`supplychain-guard init-hook`) creating `.git/hooks/pre-commit`.
+- [x] Complete workspace unit and integration test suite (34 passing tests).
+- [x] Commit and push all changes to GitHub repository (`main` branch).
+
 
 

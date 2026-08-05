@@ -321,6 +321,29 @@ impl BuildScriptVisitor {
                     );
                 }
             }
+            // Detect dynamic FFI execution (dlsym, LoadLibrary, GetProcAddress, dlopen)
+            if path_str.ends_with("dlsym")
+                || path_str.ends_with("dlopen")
+                || path_str.ends_with("LoadLibrary")
+                || path_str.ends_with("LoadLibraryA")
+                || path_str.ends_with("LoadLibraryW")
+                || path_str.ends_with("GetProcAddress")
+                || path_str.ends_with("memfd_create")
+            {
+                self.findings.push(
+                    Finding::new(
+                        self.file_path.clone(),
+                        line,
+                        Severity::Critical,
+                        FindingKind::FfiExecution,
+                        format!(
+                            "Dynamic FFI symbol resolution detected: {}() — build script is executing dynamic native library calls",
+                            path_str
+                        ),
+                    )
+                    .with_snippet(format!("{}()", path_str)),
+                );
+            }
         }
     }
 
@@ -374,16 +397,72 @@ impl BuildScriptVisitor {
 impl<'ast> Visit<'ast> for BuildScriptVisitor {
     fn visit_expr_call(&mut self, call: &'ast ExprCall) {
         self.check_function_call(call);
-        // Continue visiting child expressions
         syn::visit::visit_expr_call(self, call);
     }
 
     fn visit_expr_method_call(&mut self, method_call: &'ast ExprMethodCall) {
         self.check_method_call(method_call);
-        // Continue visiting child expressions
         syn::visit::visit_expr_method_call(self, method_call);
     }
+
+    fn visit_item_use(&mut self, item_use: &'ast syn::ItemUse) {
+        let use_str = quote::quote!(#item_use).to_string();
+        let line = Self::span_line(item_use.use_token.span);
+
+        if use_str.contains("socket2")
+            || use_str.contains("reqwest")
+            || use_str.contains("ureq")
+            || use_str.contains("hyper")
+            || use_str.contains("curl")
+        {
+            self.findings.push(
+                Finding::new(
+                    self.file_path.clone(),
+                    line,
+                    Severity::Critical,
+                    FindingKind::RawSocketUsage,
+                    format!(
+                        "Network library import detected: '{}' — build scripts must not import network client crates",
+                        use_str.trim()
+                    ),
+                )
+                .with_snippet(use_str),
+            );
+        }
+        syn::visit::visit_item_use(self, item_use);
+    }
+
+    fn visit_expr_array(&mut self, array: &'ast syn::ExprArray) {
+        if array.elems.len() >= 6 {
+            let is_byte_seq = array.elems.iter().all(|elem| {
+                if let syn::Expr::Lit(expr_lit) = elem {
+                    matches!(&expr_lit.lit, syn::Lit::Int(_))
+                } else {
+                    false
+                }
+            });
+
+            if is_byte_seq {
+                let line = Self::span_line(array.bracket_token.span.join());
+                self.findings.push(
+                    Finding::new(
+                        self.file_path.clone(),
+                        line,
+                        Severity::Critical,
+                        FindingKind::ObfuscatedByteSequence,
+                        format!(
+                            "Obfuscated byte sequence literal detected (length: {}) — this may contain hidden payload code",
+                            array.elems.len()
+                        ),
+                    )
+                    .with_snippet(format!("[... {} byte elements ...]", array.elems.len())),
+                );
+            }
+        }
+        syn::visit::visit_expr_array(self, array);
+    }
 }
+
 
 #[cfg(test)]
 mod tests {

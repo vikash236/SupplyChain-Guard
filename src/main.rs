@@ -68,6 +68,13 @@ enum Commands {
         #[arg(short, long, default_value_t = false)]
         force: bool,
     },
+
+    /// Generate a default guard.toml security policy configuration file
+    InitConfig {
+        /// Overwrite existing guard.toml file if present
+        #[arg(short, long, default_value_t = false)]
+        force: bool,
+    },
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
@@ -101,6 +108,9 @@ fn main() {
         Commands::InitHook { force } => {
             run_init_hook(force);
         }
+        Commands::InitConfig { force } => {
+            run_init_config(force);
+        }
     }
 }
 
@@ -111,6 +121,8 @@ fn run_scan(
     use_cache: bool,
     fail_on_critical: bool,
 ) {
+    let start_time = std::time::Instant::now();
+
     let policy = match GuardPolicy::load_or_default(config_path.as_deref()) {
         Ok(p) => p,
         Err(err) => {
@@ -131,7 +143,6 @@ fn run_scan(
             apply_policy_to_report(&mut report, &policy);
 
             if use_cache {
-                // Record findings into cache file
                 for finding in &report.findings {
                     if let Ok(hash) = scanner::compute_file_sha256(&finding.file) {
                         cache.record(&finding.file, hash, report.has_critical(), report.findings.len());
@@ -139,6 +150,8 @@ fn run_scan(
                 }
                 let _ = cache.save_cache(cache_file_path);
             }
+
+            let duration = start_time.elapsed();
 
             match format {
                 OutputFormat::Json => {
@@ -151,7 +164,7 @@ fn run_scan(
                     println!("{}", sarif_output);
                 }
                 OutputFormat::Text => {
-                    print_text_report(&report, path);
+                    print_text_report(&report, path, duration);
                 }
             }
 
@@ -166,9 +179,10 @@ fn run_scan(
     }
 }
 
-fn print_text_report(report: &ScanReport, path: &PathBuf) {
+fn print_text_report(report: &ScanReport, path: &PathBuf, duration: std::time::Duration) {
     println!("\n{}", "=== SupplyChain-Guard Static AST Scan Report ===".bold());
-    println!("Target path: {}\n", path.display().to_string().cyan());
+    println!("Target path: {}", path.display().to_string().cyan());
+    println!("Scan Time  : {:.2?}\n", duration);
 
     if report.findings.is_empty() {
         println!("{}", "✓ No suspicious build script patterns detected.".green().bold());
@@ -204,8 +218,9 @@ fn print_text_report(report: &ScanReport, path: &PathBuf) {
 
     println!("{}", "--------------------------------------------------".dimmed());
     println!(
-        "Scan Summary: Scanned {} file(s) | {} critical, {} warnings, {} info findings.",
+        "Scan Summary: Scanned {} file(s) in {:.2?} | {} critical, {} warnings, {} info findings.",
         report.files_scanned,
+        duration,
         if critical_count > 0 { critical_count.to_string().red().bold() } else { critical_count.to_string().normal() },
         if warn_count > 0 { warn_count.to_string().yellow().bold() } else { warn_count.to_string().normal() },
         info_count
@@ -323,5 +338,64 @@ fi
     println!("\n{}", "✓ Pre-commit hook successfully installed at .git/hooks/pre-commit".green().bold());
     println!("Build scripts will now be automatically scanned prior to git commits.\n");
 }
+
+fn run_init_config(force: bool) {
+    let config_file = Path::new("guard.toml");
+    if config_file.exists() && !force {
+        eprintln!(
+            "{}",
+            "Policy configuration file already exists at ./guard.toml. Pass --force to overwrite.".yellow()
+        );
+        exit(1);
+    }
+
+    let default_config = r#"# SupplyChain-Guard Security Policy Configuration
+
+[scanner]
+# List of finding kinds to ignore during static AST scan
+ignored_rules = []
+
+# List of file paths to exclude from static scanning
+ignored_paths = []
+
+# Override severity levels for specific findings (CRITICAL, WARN, INFO)
+[scanner.severity_overrides]
+
+[sandbox]
+# Permit outbound network connections inside sandbox container (default: false)
+allow_network = false
+
+# Environment variables explicitly allowed into sandbox container
+env_allowlist = [
+  "CARGO_BUILD_TARGET",
+  "RUSTFLAGS"
+]
+
+# Environment variables explicitly stripped from sandbox container
+env_denylist = []
+
+# Maximum process memory limit in megabytes (e.g. 1024 MB)
+memory_limit_mb = 1024
+
+# Allowed build target directories for write operations
+allowed_write_paths = [
+  "./target"
+]
+
+[rules]
+block_obfuscated_code = true
+block_subprocesses = false
+block_network_calls = true
+"#;
+
+    if let Err(e) = fs::write(config_file, default_config) {
+        eprintln!("Failed to write guard.toml: {}", e);
+        exit(1);
+    }
+
+    println!("\n{}", "✓ Security policy template successfully created at ./guard.toml".green().bold());
+    println!("Customize rule exclusions and sandbox resource limits in guard.toml.\n");
+}
+
 
 

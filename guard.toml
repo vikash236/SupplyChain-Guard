@@ -1,0 +1,37 @@
+# SupplyChain-Guard Security Policy Configuration
+
+[scanner]
+# List of finding kinds to ignore during static AST scan
+ignored_rules = []
+
+# List of file paths to exclude from static scanning
+ignored_paths = []
+
+# Override severity levels for specific findings (CRITICAL, WARN, INFO)
+[scanner.severity_overrides]
+
+[sandbox]
+# Permit outbound network connections inside sandbox container (default: false)
+allow_network = false
+
+# Environment variables explicitly allowed into sandbox container
+env_allowlist = [
+  "CARGO_BUILD_TARGET",
+  "RUSTFLAGS"
+]
+
+# Environment variables explicitly stripped from sandbox container
+env_denylist = []
+
+# Maximum process memory limit in megabytes (e.g. 1024 MB)
+memory_limit_mb = 1024
+
+# Allowed build target directories for write operations
+allowed_write_paths = [
+  "./target"
+]
+
+[rules]
+block_obfuscated_code = true
+block_subprocesses = false
+block_network_calls = true
