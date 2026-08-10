@@ -1,6 +1,6 @@
 # Active Workstreams — SupplyChain-Guard
 
-## Active Phase: Phase 1 — Process Isolation Enforcer
+## Active Phase: Phase 8 — Software Bill of Materials (SBOM) Security Attestation Engine
 
 ### Scaffold & Workspace (Phase 0 Completed ✓)
 - [x] Initialize Cargo workspace (`Cargo.toml` with members: `crates/scanner`, `crates/sandbox`, root `src/`).
@@ -56,7 +56,59 @@
 - [x] Implement SHA-256 build script hash caching engine (`crates/scanner/src/cache.rs`) with `--use-cache` / `-u` CLI option.
 - [x] Implement pre-commit hook installer command (`supplychain-guard init-hook`) creating `.git/hooks/pre-commit`.
 - [x] Complete workspace unit and integration test suite (34 passing tests).
-- [x] Commit and push all changes to GitHub repository (`main` branch).
+---
+
+### Advanced AST Heuristics & Enterprise Hardening (Phase 4 Completed ✓)
+- [x] Implement dynamic FFI call AST inspection (`dlsym`, `dlopen`, `LoadLibrary`, `GetProcAddress`, `memfd_create`) in `crates/scanner/src/rust_scanner.rs`.
+- [x] Implement raw socket / HTTP client crate import inspection (`socket2`, `reqwest`, `ureq`, `hyper`, `curl`).
+- [x] Implement obfuscated hex/byte-array literal sequence detection (`[0x68, 0x65, 0x6c, ...]`).
+- [x] Implement policy template generator command (`supplychain-guard init-config`).
+- [x] Add scan execution duration performance telemetry to report output.
+- [x] Complete comprehensive unit test suite (37 passing workspace tests).
+- [x] Commit and push all changes to GitHub repository (`main` branch commit `1cffd59`).
+
+---
+
+### Package Manager Interceptor & Ecosystem Integration (Phase 5 Completed ✓)
+- [x] Create `crates/cargo-guard` workspace member crate.
+- [x] Implement `cargo-guard` binary subcommand plugin supporting `cargo guard scan` and `cargo guard build` transparent security gate interception.
+- [x] Implement `supplychain-guard npm-install` subcommand for Node.js package lifecycle script pre-install scanning and sandboxed installation.
+- [x] Implement `cargo-guard` integration unit test suite (`cargo_guard_tests.rs`).
+
+---
+
+### Security Audit Telemetry Engine & Policy Auto-Tuning (Phase 6 Completed ✓)
+- [x] Create `crates/audit` workspace member crate.
+- [x] Implement append-only JSONL event audit logger (`.guard-audit.jsonl`).
+- [x] Implement scan event and sandboxed process execution record logging in `AuditLogger`.
+- [x] Implement telemetry metrics analysis and policy recommendation engine in `crates/audit/src/lib.rs`.
+- [x] Add `supplychain-guard audit` subcommand to analyze historical audit trails.
+- [x] Integrate `AuditLogger` into `supplychain-guard` and `cargo-guard` execution pipelines.
+- [x] Complete comprehensive unit test suite (`crates/audit/tests/audit_tests.rs`).
+
+---
+
+### Workspace Integrity & Build Mutation Gating (Phase 7 Completed ✓)
+- [x] Create `crates/integrity` workspace member crate.
+- [x] Implement `WorkspaceSnapshot` SHA-256 workspace file hashing engine.
+- [x] Implement pre/post execution snapshot diff verification algorithm.
+- [x] Integrate pre/post integrity checks into `supplychain-guard exec` and `cargo-guard`.
+- [x] Add `supplychain-guard verify-integrity` CLI subcommand.
+- [x] Complete comprehensive unit and integration test suite (`crates/integrity/tests/integrity_tests.rs`).
+
+---
+
+### Software Bill of Materials (SBOM) Security Attestation Engine (Phase 8 Completed ✓)
+- [x] Create `crates/sbom` workspace member crate.
+- [x] Implement `SbomGenerator` with CycloneDX v1.4 and SPDX v2.3 compliant JSON output engines.
+- [x] Annotate build script component hashes, AST security findings, and sandbox policy settings in SBOM manifests.
+- [x] Add `supplychain-guard sbom` CLI subcommand with `--format cyclonedx` / `--format spdx`.
+- [x] Complete comprehensive unit and integration test suite (`crates/sbom/tests/sbom_tests.rs`).
+
+
+
+
+
 
 
 

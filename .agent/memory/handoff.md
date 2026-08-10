@@ -24,13 +24,15 @@
   - Added `--config` / `-c` CLI option to `supplychain-guard scan` and `exec` subcommands with auto-detection of `./guard.toml`.
   - Created annotated example policy configuration (`guard.toml.example`) and unit tests (`crates/policy/tests/policy_tests.rs`) with 32 passing workspace tests.
 
-- **Phase 3 (Continuous CI/CD Integration & Enterprise Governance): COMPLETE.**
-  - Implemented SARIF v2.1.0 output serializer (`crates/scanner/src/sarif.rs`) with `--format sarif` CLI option.
-  - Implemented composite GitHub Actions runner (`action.yml`) for automated static AST security scanning and SARIF uploads to GitHub Security Code Scanning.
-  - Implemented SHA-256 build script hash caching engine (`crates/scanner/src/cache.rs`) with `--use-cache` / `-u` CLI option.
-  - Implemented pre-commit hook installer command (`supplychain-guard init-hook`) setting up `.git/hooks/pre-commit`.
-  - Staged, committed, and pushed all code to GitHub repository (`main` branch).
-  - All 34 workspace unit and integration tests passing.
+- **Phase 4 (Advanced AST Heuristics & Enterprise Hardening): COMPLETE.**
+  - Implemented dynamic FFI call AST inspection (`dlsym`, `dlopen`, `LoadLibrary`, `GetProcAddress`, `memfd_create`) in `crates/scanner/src/rust_scanner.rs`.
+  - Implemented raw socket / HTTP client crate import inspection (`socket2`, `reqwest`, `ureq`, `hyper`, `curl`).
+  - Implemented obfuscated byte array / hex sequence literal detection (`[0x68, 0x65, 0x6c, ...]`).
+  - Implemented policy template generator subcommand (`supplychain-guard init-config`).
+  - Added scan duration performance telemetry (`std::time::Instant`) to human-readable reports.
+  - Staged, committed, and pushed all code to GitHub main branch (commit `1cffd59`).
+  - All 37 workspace unit and integration tests passing cleanly.
+
 
 
 

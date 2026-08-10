@@ -4,5 +4,6 @@
 .idea/
 .vscode/
 .guard-cache.json
+.guard-audit.jsonl
 results.sarif
 

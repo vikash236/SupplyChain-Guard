@@ -3,6 +3,10 @@ members = [
     "crates/scanner",
     "crates/sandbox",
     "crates/policy",
+    "crates/cargo-guard",
+    "crates/audit",
+    "crates/integrity",
+    "crates/sbom",
 ]
 resolver = "2"
 
@@ -17,6 +21,9 @@ license = "MIT"
 scanner = { path = "crates/scanner" }
 sandbox = { path = "crates/sandbox" }
 policy = { path = "crates/policy" }
+audit = { path = "crates/audit" }
+integrity = { path = "crates/integrity" }
+sbom = { path = "crates/sbom" }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

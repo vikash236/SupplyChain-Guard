@@ -1,0 +1,16 @@
+[package]
+name = "audit"
+version = "0.1.0"
+edition = "2021"
+description = "Audit telemetry logger and policy auto-tuner engine for SupplyChain-Guard"
+license = "MIT"
+
+[dependencies]
+scanner = { path = "../scanner" }
+policy = { path = "../policy" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+colored = "2"
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,0 +1,24 @@
+[package]
+name = "cargo-guard"
+version = "0.1.0"
+edition = "2021"
+description = "Transparent cargo subcommand wrapper for SupplyChain-Guard static AST scanning and sandboxed execution"
+license = "MIT"
+
+[[bin]]
+name = "cargo-guard"
+path = "src/main.rs"
+
+[dependencies]
+scanner = { path = "../scanner" }
+sandbox = { path = "../sandbox" }
+policy = { path = "../policy" }
+audit = { path = "../audit" }
+integrity = { path = "../integrity" }
+clap = { version = "4", features = ["derive"] }
+colored = "2"
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"
+
